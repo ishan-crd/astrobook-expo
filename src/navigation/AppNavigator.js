@@ -1,6 +1,7 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import SplashScreen from '../screens/SplashScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import MyConsultationsScreen from '../screens/MyConsultationsScreen';
@@ -25,7 +26,12 @@ const screenOptions = {
 export default function AppNavigator() {
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={screenOptions} initialRouteName="Home">
+      <Stack.Navigator screenOptions={screenOptions} initialRouteName="Splash">
+        <Stack.Screen
+          name="Splash"
+          component={SplashScreen}
+          options={{ headerShown: false }}
+        />
         <Stack.Screen
           name="Home"
           component={DashboardScreen}
