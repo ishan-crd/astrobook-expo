@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,10 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import api from '../config/apiConfig';
+import IMAGE_BASE_URL from '../config/imageConfig';
 import MyHeader from '../components/MyHeader';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -22,26 +26,7 @@ const ITEM_WIDTH = SCREEN_WIDTH * 0.65;
 const SPACING = 16;
 const TOTAL_ITEM_WIDTH = ITEM_WIDTH + SPACING;
 
-// Hardcoded data - no Firebase, no API
-const HARDCODED_CUSTOMER = { customerName: 'User', phoneNumber: '1234567890', image: null };
-
-const HARDCODED_REVIEWS = [
-  { _id: '1', name: 'Priya S.', review: 'Very accurate predictions. The astrologer was patient and helpful.', rating: 5 },
-  { _id: '2', name: 'Rahul M.', review: 'Great experience. Will definitely consult again for important decisions.', rating: 5 },
-  { _id: '3', name: 'Anita K.', review: 'Professional and insightful. Highly recommend AstroBook!', rating: 5 },
-];
-
-const HARDCODED_CELEB_EXP = [
-  { _id: '1', name: 'Acharya Lav Bhushan', title: 'Celebrity Astrologer', image: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&h=400&fit=crop' },
-  { _id: '2', name: 'Expert Panel', title: 'Years of Experience', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop' },
-  { _id: '3', name: 'Vedic Wisdom', title: 'Trusted by Many', image: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=400&h=400&fit=crop' },
-];
-
-const HARDCODED_ASTROLOGERS = [
-  { _id: '1', astrologerName: 'Acharya Lav Bhushan', experience: 15, title: 'Celebrity', profileImage: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=200&h=200&fit=crop', _type: 'celebrity' },
-  { _id: '2', astrologerName: 'Dr. Sharma', experience: 12, title: 'Top Astrologer', profileImage: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop', _type: 'top' },
-  { _id: '3', astrologerName: 'Pandit Ji', experience: 20, title: 'Celebrity', profileImage: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=200&h=200&fit=crop', _type: 'celebrity' },
-];
+const getImageUrl = (path) => (path?.startsWith('http') ? path : `${IMAGE_BASE_URL}${path}`);
 
 const BANNER_IMAGES = [
   { id: '1', image: require('../assets/banners/4.png') },
@@ -62,17 +47,20 @@ function getYouTubeThumbnail(url) {
   return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 }
 
-function showDemo(msg) {
-  Alert.alert('Demo', msg || 'This screen is not implemented in the Expo demo.');
-}
+// Removed showDemo - using real navigation now
 
-export default function DashboardScreen() {
-  const [customerData] = useState(HARDCODED_CUSTOMER);
-  const [reviews] = useState(HARDCODED_REVIEWS);
-  const [celebExp] = useState(HARDCODED_CELEB_EXP);
+export default function DashboardScreen({ navigation }) {
+  const [customerData, setCustomerData] = useState({
+    customerName: 'User',
+    phoneNumber: '1234567890',
+    image: null,
+  });
+  const [reviews, setReviews] = useState([]);
+  const [celebExp, setCelebExp] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [upcomingConsultations] = useState([]);
-  const [combinedAstrologers] = useState(HARDCODED_ASTROLOGERS);
+  const [upcomingConsultations, setUpcomingConsultations] = useState([]);
+  const [celebrityAstrologers, setCelebrityAstrologers] = useState([]);
+  const [topAstrologers, setTopAstrologers] = useState([]);
 
   const celebListRef = useRef(null);
   const flatListRef = useRef(null);
@@ -82,11 +70,167 @@ export default function DashboardScreen() {
 
   const celebData = useMemo(() => (celebExp.length > 0 ? [...celebExp, ...celebExp] : []), [celebExp]);
 
-  const onRefresh = React.useCallback(async () => {
-    setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setRefreshing(false);
+  const combinedAstrologers = useMemo(() => {
+    const celebrity = celebrityAstrologers.map(item => ({
+      ...item,
+      _type: 'celebrity',
+    }));
+    const top = topAstrologers.map(item => ({
+      ...item,
+      _type: 'top',
+    }));
+    return [...celebrity, ...top];
+  }, [celebrityAstrologers, topAstrologers]);
+
+  // API Fetch Functions
+  const fetchCustomer = async () => {
+    try {
+      const storedData = await AsyncStorage.getItem('customerData');
+      if (storedData) {
+        setCustomerData(JSON.parse(storedData));
+      }
+    } catch (error) {
+      console.error('Error reading customerData:', error);
+    }
+  };
+
+  const fetchReviews = async () => {
+    try {
+      const response = await axios.get(`${api}/customers/get-feedback`, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (response?.data?.success) {
+        setReviews(response?.data?.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+    }
+  };
+
+  const fetchCelebrityExp = async () => {
+    try {
+      const response = await axios.get(`${api}/admin/get_celebrity_experience`, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (response?.data?.success) {
+        setCelebExp(response?.data?.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching celebrity experience:', error);
+    }
+  };
+
+  const fetchCelebrityAstrologers = async () => {
+    try {
+      const currentTime = new Date().toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const res = await axios.get(
+        `${api}/astrologer/astrologer_filters?limit=50&hasAvailableSlots=true&currentTime=${currentTime}`
+      );
+      if (res?.data?.success) {
+        const allAstrologers = res.data.results || [];
+        const celebrityOnly = allAstrologers.filter(astro => astro?.title === 'Celebrity');
+        const topAstrologersOnly = allAstrologers.filter(astro => astro?.title === 'Top Astrologer');
+        setCelebrityAstrologers(celebrityOnly);
+        setTopAstrologers(topAstrologersOnly);
+      }
+    } catch (err) {
+      console.log('Celebrity astrologer error:', err);
+    }
+  };
+
+  const toDateFromTime = (dateObj, timeStr) => {
+    if (!dateObj || !timeStr) return null;
+    const [h, m] = timeStr.split(':').map(Number);
+    const d = new Date(dateObj);
+    d.setHours(h, m, 0, 0);
+    return d;
+  };
+
+  const fetchUpcomingConsultations = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('customerData');
+      const customerData = raw ? JSON.parse(raw) : null;
+      if (!customerData?._id) return;
+
+      const res = await axios.get(`${api}/mobile/user-consultations/${customerData._id}`);
+
+      if (!res?.data?.success) return;
+
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      const upcoming = res.data.bookings
+        .filter(b => b.status === 'booked')
+        .filter(b => b.date && b.fromTime && b.toTime)
+        .filter(b => {
+          const bookingDate = new Date(b.date);
+          const bookingDay = new Date(
+            bookingDate.getFullYear(),
+            bookingDate.getMonth(),
+            bookingDate.getDate()
+          );
+          if (bookingDay < todayStart) return false;
+          const endTime = toDateFromTime(bookingDate, b.toTime);
+          return endTime && endTime > now;
+        })
+        .sort((a, b) => {
+          const aStart = toDateFromTime(new Date(a.date), a.fromTime);
+          const bStart = toDateFromTime(new Date(b.date), b.fromTime);
+          return aStart - bStart;
+        })
+        .slice(0, 3);
+
+      setUpcomingConsultations(upcoming);
+    } catch (err) {
+      console.log('Upcoming Fetch Error:', err);
+    }
+  };
+
+  const fetchAstrologerDetails = async (id, mode = 'video') => {
+    try {
+      const response = await axios.post(
+        `${api}/astrologer/get-astrologer-details`,
+        { astrologerId: id },
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+      if (response?.data?.success) {
+        if (navigation?.navigate) {
+          // navigation.navigate('AstrologerDetailsScreen', {
+          //   astrologer: response.data.astrologer,
+          //   mode,
+          // });
+          Alert.alert('Astrologer Details', `Viewing details for astrologer ID: ${id}`);
+        }
+      } else {
+        Alert.alert('No Data', 'Astrologer details not found.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to fetch astrologer details.');
+    }
+  };
+
+  useEffect(() => {
+    fetchCustomer();
+    fetchReviews();
+    fetchCelebrityExp();
+    fetchCelebrityAstrologers();
+    fetchUpcomingConsultations();
   }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      fetchCustomer(),
+      fetchReviews(),
+      fetchCelebrityExp(),
+      fetchCelebrityAstrologers(),
+      fetchUpcomingConsultations(),
+    ]);
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     if (celebExp.length === 0) return;
@@ -133,9 +277,13 @@ export default function DashboardScreen() {
     <View style={styles.card}>
       <Text style={styles.reviewText}>{item.review}</Text>
       <View style={styles.footer}>
-        <View style={styles.avatarFallback}>
-          <Text style={styles.avatarInitial}>{item.name?.charAt(0) || 'U'}</Text>
-        </View>
+        {item.image ? (
+          <Image source={{ uri: getImageUrl(item.image) }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatarFallback}>
+            <Text style={styles.avatarInitial}>{item.name?.charAt(0) || 'U'}</Text>
+          </View>
+        )}
         <View>
           <Text style={styles.name}>{item.name}</Text>
           <Text style={styles.rating}>{'⭐'.repeat(item.rating || 5)}</Text>
@@ -168,7 +316,7 @@ export default function DashboardScreen() {
             <Text style={styles.bannerTitle}>Talk to India's Best</Text>
             <Text style={styles.bannerTitleHighlight}>Astrologers</Text>
             <Text style={styles.bannerSubtitle}>Get accurate predictions & personalized remedies</Text>
-            <TouchableOpacity style={styles.bannerButton} onPress={() => showDemo('Consult Now – demo')}>
+            <TouchableOpacity style={styles.bannerButton} onPress={() => navigation?.navigate && navigation.navigate('Home')}>
               <Text style={styles.bannerButtonText}>Consult Now</Text>
               <MaterialCommunityIcons name="arrow-right" size={24} color="#db9a4a" />
             </TouchableOpacity>
@@ -197,21 +345,97 @@ export default function DashboardScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Upcoming Consultations</Text>
             {upcomingConsultations.length > 0 && (
-              <TouchableOpacity onPress={() => showDemo('My Consultations')}>
+              <TouchableOpacity onPress={() => navigation?.navigate && navigation.navigate('MyConsultations')}>
                 <Text style={styles.viewAllText}>View All</Text>
               </TouchableOpacity>
             )}
           </View>
-          <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="crystal-ball" size={60} color="#db9a4a" style={{ marginBottom: 12 }} />
-            <Text style={styles.emptyText}>No Upcoming Consultations</Text>
-          </View>
+
+          {upcomingConsultations.length === 0 ? (
+            <View style={styles.emptyState}>
+              <MaterialCommunityIcons name="crystal-ball" size={60} color="#db9a4a" style={{ marginBottom: 12 }} />
+              <Text style={styles.emptyText}>No Upcoming Consultations</Text>
+            </View>
+          ) : (
+            upcomingConsultations.map((item, index) => {
+              const astrologer = item.astrologer || {};
+              const startStr = item.fromTime;
+              const endStr = item.toTime;
+              const now = new Date();
+              const bookingDate = new Date(item.date || now.toISOString());
+              const start = startStr ? toDateFromTime(bookingDate, startStr) : null;
+              const end = endStr ? toDateFromTime(bookingDate, endStr) : null;
+              const isJoinTime = start && end && now >= start && now <= end;
+
+              const getModeIcon = (mode) => {
+                switch (mode?.toLowerCase()) {
+                  case 'call': return 'phone';
+                  case 'videocall': return 'video-outline';
+                  case 'chat': return 'chat-outline';
+                  default: return 'help-circle-outline';
+                }
+              };
+
+              const getDurationInMinutes = (fromTime, toTime) => {
+                if (!fromTime || !toTime) return 0;
+                const [fromH, fromM] = fromTime.split(':').map(Number);
+                const [toH, toM] = toTime.split(':').map(Number);
+                const fromTotal = fromH * 60 + fromM;
+                const toTotal = toH * 60 + toM;
+                return toTotal - fromTotal;
+              };
+
+              return (
+                <View key={index} style={styles.consultationCard}>
+                  <View style={styles.consultationAvatar}>
+                    <Text style={styles.consultationAvatarText}>
+                      {astrologer?.name?.charAt(0) || 'A'}
+                    </Text>
+                  </View>
+                  <View style={styles.consultationInfo}>
+                    <Text style={styles.consultationName}>
+                      {astrologer?.name || 'Unknown'}
+                    </Text>
+                    <View style={styles.consultationTime}>
+                      <MaterialCommunityIcons
+                        name={getModeIcon(item.consultationType)}
+                        size={16}
+                        color="#7F1D1D"
+                      />
+                      <Text style={styles.consultationTopic}> | </Text>
+                      <Text style={styles.consultationTopic}>
+                        {getDurationInMinutes(item.fromTime, item.toTime)} min
+                      </Text>
+                    </View>
+                    <View style={styles.consultationTime}>
+                      <MaterialCommunityIcons name="calendar" size={12} color="#999" />
+                      <Text style={styles.consultationTimeText}>
+                        {bookingDate.toDateString()}
+                      </Text>
+                    </View>
+                  </View>
+                  {(isJoinTime && item.consultationType === 'chat') ? (
+                    <TouchableOpacity
+                      style={styles.joinButton}
+                      onPress={() => Alert.alert('Info', 'Join chat feature coming soon')}
+                    >
+                      <Text style={styles.joinButtonText}>Join</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.timeButton}>
+                      <Text style={styles.timeButtonText}>{startStr || '-'}</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })
+          )}
         </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Our Astrologers</Text>
-            <TouchableOpacity onPress={() => showDemo('View all astrologers')}>
+            <TouchableOpacity onPress={() => Alert.alert('Info', 'Astrologer list screen coming soon')}>
               <Text style={styles.viewAllText}>View All</Text>
             </TouchableOpacity>
           </View>
@@ -220,9 +444,9 @@ export default function DashboardScreen() {
             horizontal
             showsHorizontalScrollIndicator={false}
             keyExtractor={(item) => item._id}
-            renderItem={({ item }) => (
-              <View style={styles.celebrityCard}>
-                <Image source={{ uri: item.profileImage }} style={styles.celebrityImage} />
+              renderItem={({ item }) => (
+                <View style={styles.celebrityCard}>
+                  <Image source={{ uri: getImageUrl(item.profileImage) }} style={styles.celebrityImage} />
                 {item._type === 'celebrity' && (
                   <View style={styles.celebrityBadge}>
                     <Text style={styles.celebrityBadgeText}>Celebrity Astrologer</Text>
@@ -233,11 +457,11 @@ export default function DashboardScreen() {
                     <Text style={styles.celebrityBadgeText}>Top Astrologer</Text>
                   </View>
                 )}
-                <Text style={styles.celebrityName}>{item?.astrologerName}</Text>
-                <Text style={styles.celebrityExp}>{item?.experience}+ yrs experience</Text>
-                <TouchableOpacity style={styles.viewDetailsBtn} onPress={() => showDemo('View astrologer details')}>
-                  <Text style={styles.viewDetailsText}>View Details</Text>
-                </TouchableOpacity>
+                  <Text style={styles.celebrityName}>{item?.astrologerName}</Text>
+                  <Text style={styles.celebrityExp}>{item?.experience}+ yrs experience</Text>
+                  <TouchableOpacity style={styles.viewDetailsBtn} onPress={() => fetchAstrologerDetails(item?._id, 'video')}>
+                    <Text style={styles.viewDetailsText}>View Details</Text>
+                  </TouchableOpacity>
               </View>
             )}
           />
@@ -246,25 +470,25 @@ export default function DashboardScreen() {
         <View style={[styles.section, { marginTop: 12 }]}>
           <Text style={styles.sectionTitle}>Our Services</Text>
           <View style={styles.actionsGrid}>
-            <TouchableOpacity style={styles.actionCard} onPress={() => showDemo('Voice Call')}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Info', 'Voice Call feature coming soon')}>
               <View style={[styles.actionIconWrapper, { backgroundColor: '#db9a4a' }]}>
                 <MaterialCommunityIcons name="phone-in-talk" size={28} color="#fff" />
               </View>
               <Text style={styles.actionText}>Voice Call</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard} onPress={() => showDemo('Video Call')}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Info', 'Video Call feature coming soon')}>
               <View style={[styles.actionIconWrapper, { backgroundColor: '#db9a4a' }]}>
                 <MaterialCommunityIcons name="video-outline" size={28} color="#fff" />
               </View>
               <Text style={styles.actionText}>Video Call</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard} onPress={() => showDemo('Chat')}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Info', 'Chat feature coming soon')}>
               <View style={[styles.actionIconWrapper, { backgroundColor: '#db9a4a' }]}>
                 <MaterialCommunityIcons name="chat-outline" size={28} color="#fff" />
               </View>
               <Text style={styles.actionText}>Chat</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard} onPress={() => showDemo('Book Pooja')}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Info', 'Pooja booking coming soon')}>
               <View style={[styles.actionIconWrapper, { backgroundColor: '#db9a4a' }]}>
                 <MaterialCommunityIcons name="campfire" size={28} color="#fff" />
               </View>
@@ -298,7 +522,7 @@ export default function DashboardScreen() {
             </View>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.servicesScroll}>
-            <TouchableOpacity style={styles.serviceCardEnhanced} onPress={() => showDemo('Daily Horoscope')}>
+            <TouchableOpacity style={styles.serviceCardEnhanced} onPress={() => Alert.alert('Info', 'Daily Horoscope coming soon')}>
               <View style={styles.serviceIconContainer}>
                 <MaterialCommunityIcons name="crystal-ball" size={28} color="#db9a4a" />
               </View>
@@ -306,7 +530,7 @@ export default function DashboardScreen() {
               <Text style={styles.serviceDescription}>Your daily predictions</Text>
               <View style={styles.serviceBadge}><Text style={styles.serviceBadgeText}>FREE</Text></View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.serviceCardEnhanced} onPress={() => showDemo('Kundli Matching')}>
+            <TouchableOpacity style={styles.serviceCardEnhanced} onPress={() => Alert.alert('Info', 'Kundli Matching coming soon')}>
               <View style={styles.serviceIconContainer}>
                 <MaterialCommunityIcons name="heart-outline" size={28} color="#db9a4a" />
               </View>
@@ -314,7 +538,7 @@ export default function DashboardScreen() {
               <Text style={styles.serviceDescription}>Marriage compatibility</Text>
               <View style={styles.serviceBadge}><Text style={styles.serviceBadgeText}>FREE</Text></View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.serviceCardEnhanced} onPress={() => showDemo('Free Kundli')}>
+            <TouchableOpacity style={styles.serviceCardEnhanced} onPress={() => navigation?.navigate && navigation.navigate('FreeKundli')}>
               <View style={styles.serviceIconContainer}>
                 <MaterialCommunityIcons name="book-open-page-variant" size={28} color="#db9a4a" />
               </View>
@@ -341,7 +565,7 @@ export default function DashboardScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Special Offerings</Text>
-          <TouchableOpacity style={styles.specialCard} onPress={() => showDemo('Book a Pooja')}>
+          <TouchableOpacity style={styles.specialCard} onPress={() => Alert.alert('Info', 'Pooja booking coming soon')}>
             <View style={styles.specialLeft}>
               <MaterialCommunityIcons name="campfire" size={36} color="#db9a4a" />
             </View>
@@ -641,4 +865,92 @@ const styles = StyleSheet.create({
   },
   videoThumbnail: { width: '100%', height: 120 },
   videoTitle: { padding: 10, fontSize: 13, fontWeight: '600', color: '#2C1810' },
+  consultationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: '#db9a4a',
+  },
+  consultationAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#db9a4a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  consultationAvatarText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  consultationInfo: {
+    flex: 1,
+  },
+  consultationName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2C1810',
+    marginBottom: 4,
+  },
+  consultationTopic: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  consultationTime: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  consultationTimeText: {
+    fontSize: 12,
+    color: '#999',
+  },
+  joinButton: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  joinButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  timeButton: {
+    backgroundColor: '#FFF5E6',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#db9a4a',
+  },
+  timeButtonText: {
+    color: '#db9a4a',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    marginRight: 12,
+  },
 });

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,18 +10,18 @@ import {
   Linking,
   Modal,
   Alert,
+  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import api from '../config/apiConfig';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Hardcoded data - no Firebase, no API
-const HARDCODED_CUSTOMER = {
-  customerName: 'User',
-  phoneNumber: '1234567890',
-  image: null,
-};
+const BASE_URL = 'https://alb-web-assets.s3.ap-south-1.amazonaws.com/';
+const getImageUrl = (path) => (path?.startsWith('http') ? path : `${BASE_URL}${path}`);
 
 const drawerData = [
   { title: 'Profile', icon: 'account' },
@@ -51,9 +51,56 @@ export default function MyHeader() {
   const navigation = useNavigation();
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [supportModalVisible, setSupportModalVisible] = useState(false);
-  const [customerData] = useState(HARDCODED_CUSTOMER);
+  const [customerData, setCustomerData] = useState({
+    customerName: 'User',
+    phoneNumber: '1234567890',
+    image: null,
+  });
+  const [notifications, setNotifications] = useState([]);
+  const [imageError, setImageError] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(-SCREEN_WIDTH * 0.8)).current;
+
+  const fetchCustomer = async () => {
+    try {
+      const storedData = await AsyncStorage.getItem('customerData');
+      if (storedData) {
+        setCustomerData(JSON.parse(storedData));
+      }
+    } catch (error) {
+      console.error('Error reading customerData:', error);
+    }
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const userData = await AsyncStorage.getItem('customerData');
+      if (!userData) return;
+      const parsed = JSON.parse(userData);
+      if (!parsed._id) return;
+
+      const res = await axios.get(`${api}/mobile/notifications/${parsed._id}`);
+      setNotifications(res.data.notifications || []);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchCustomer();
+    fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [customerData?.image]);
+
+  const Imguri =
+    customerData?.image &&
+    typeof customerData.image === 'string' &&
+    customerData.image.trim().length > 0
+      ? getImageUrl(customerData.image)
+      : null;
 
   const toggleDrawer = () => {
     if (!drawerVisible) {
@@ -165,12 +212,26 @@ export default function MyHeader() {
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
                 <View style={styles.drawerHeader}>
                   <View style={styles.profileContainer}>
-                    <View style={[styles.headerAvatar, styles.avatarPlaceholder]}>
-                      <MaterialCommunityIcons name="account" size={32} color="#fff" />
-                    </View>
+                    {Imguri && !imageError ? (
+                      <View style={styles.avatarWrapper}>
+                        <Image
+                          source={{ uri: Imguri }}
+                          style={styles.avatar}
+                          resizeMode="cover"
+                          onError={() => setImageError(true)}
+                        />
+                        <View style={styles.avatarBadge}>
+                          <Text style={styles.avatarBadgeText}>✓</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={[styles.headerAvatar, styles.avatarPlaceholder]}>
+                        <MaterialCommunityIcons name="account" size={32} color="#fff" />
+                      </View>
+                    )}
                     <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{customerData.customerName}</Text>
-                      <Text style={styles.phoneText}>{customerData.phoneNumber}</Text>
+                      <Text style={styles.userName}>{customerData.customerName || 'User'}</Text>
+                      <Text style={styles.phoneText}>{customerData.phoneNumber || ''}</Text>
                       <View style={styles.premiumBadge}>
                         <Text style={styles.premiumText}>⭐ Premium User</Text>
                       </View>
@@ -285,6 +346,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#db9a4a',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarWrapper: {
+    position: 'relative',
+  },
+  avatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#4CAF50',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   userInfo: { marginLeft: 16, flex: 1 },
   userName: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
