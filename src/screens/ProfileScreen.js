@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import api from '../config/apiConfig';
 import * as ImagePicker from 'expo-image-picker';
+import Toast from 'react-native-toast-message';
 
 const BASE_URL = 'https://alb-web-assets.s3.ap-south-1.amazonaws.com/';
 const getImageUrl = (path) => (path?.startsWith('http') ? path : `${BASE_URL}${path}`);
@@ -34,6 +36,7 @@ export default function ProfileScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [customerId, setCustomerId] = useState(null);
+  const [pickedImage, setPickedImage] = useState(null);
 
   const loadCustomerId = async () => {
     const raw = await AsyncStorage.getItem('customerData');
@@ -109,8 +112,29 @@ export default function ProfileScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      setProfileImage({ uri: result.assets[0].uri });
+      const asset = result.assets[0];
+      setProfileImage({ uri: asset.uri });
+      setPickedImage(asset); // Store for upload
     }
+  };
+
+  const uploadProfileImage = async (customerId, imageFile) => {
+    const imgData = new FormData();
+    const fileName = imageFile.fileName || `profile_${Date.now()}.jpg`;
+    const fileType = imageFile.type || 'image/jpeg';
+
+    imgData.append('customerId', customerId);
+    imgData.append('image', {
+      uri: Platform.OS === 'android' ? imageFile.uri : imageFile.uri.replace('file://', ''),
+      name: fileName,
+      type: fileType,
+    });
+
+    const res = await axios.post(`${api}/customers/change_profile`, imgData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    return res.data;
   };
 
   const handleSave = async () => {
@@ -153,15 +177,33 @@ export default function ProfileScreen() {
       if (res.data.success) {
         let updatedProfile = res.data.results;
 
-        if (profileImage?.uri && !profileImage.uri.startsWith('http')) {
-          // Image upload would go here - requires FormData
-          // For now, just update the profile data
-          Alert.alert('Note', 'Profile updated. Image upload requires additional setup.');
+        // Upload image if a new one was picked
+        if (pickedImage && !pickedImage.uri.startsWith('http')) {
+          try {
+            const imgRes = await uploadProfileImage(customerId, pickedImage);
+            if (imgRes?.success && imgRes?.image) {
+              const fullImageUrl = getImageUrl(imgRes.image);
+              updatedProfile = { ...updatedProfile, image: imgRes.image };
+              setProfileImage({ uri: fullImageUrl });
+              setPickedImage(null); // Clear picked image after upload
+            }
+          } catch (imgErr) {
+            console.error('Image upload error:', imgErr);
+            Toast.show({
+              type: 'error',
+              text1: 'Image Upload Failed',
+              text2: 'Profile updated but image upload failed',
+            });
+          }
         }
 
         await AsyncStorage.setItem('customerData', JSON.stringify(updatedProfile));
         setIsEditing(false);
-        Alert.alert('Success', 'Profile updated successfully');
+        Toast.show({
+          type: 'success',
+          text1: 'Success',
+          text2: 'Profile updated successfully',
+        });
       } else {
         Alert.alert('Error', res.data.message || 'Update failed');
       }

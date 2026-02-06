@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import Toast from 'react-native-toast-message';
 import api from '../config/apiConfig';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function CartScreen() {
+  const navigation = useNavigation();
   const [cartData, setCartData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [cartLoading, setCartLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
 
   const fetchCart = async (showLoader = true) => {
     if (showLoader) setLoading(true);
@@ -56,11 +61,91 @@ export default function CartScreen() {
         action: type === 'inc' ? 'increment' : 'decrement',
       });
       await fetchCart(false);
+      Toast.show({
+        type: 'success',
+        text1: 'Updated',
+        text2: 'Cart updated successfully',
+      });
     } catch (error) {
-      Alert.alert('Error', 'Quantity update failed');
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Quantity update failed',
+      });
     } finally {
       setCartLoading(false);
     }
+  };
+
+  const handlePayment = async () => {
+    // NOTE: Razorpay requires native modules and won't work in Expo Go
+    // For production, you'll need to use EAS Build or eject from Expo
+    // This is a placeholder implementation
+    
+    Alert.alert(
+      'Payment Integration',
+      'Razorpay requires native modules and needs EAS Build for production. For now, payment is simulated.',
+      [
+        {
+          text: 'Simulate Payment',
+          onPress: async () => {
+            try {
+              setPaymentLoading(true);
+              const raw = await AsyncStorage.getItem('customerData');
+              const customer = raw ? JSON.parse(raw) : null;
+              
+              // Create order
+              const orderRes = await axios.post(`${api}/customers/create_razorpay_order`, {
+                amount: cartData.totalCartPrice,
+              });
+
+              // In a real app with Razorpay native module:
+              // const payment = await RazorpayCheckout.open({
+              //   name: 'Acharya Lav Bhushan',
+              //   description: 'Pooja Booking',
+              //   currency: 'INR',
+              //   key: orderRes.data.key_id,
+              //   amount: Number(cartData.totalCartPrice) * 100,
+              //   order_id: orderRes.data.data.id,
+              //   prefill: {
+              //     name: customer?.customerName || 'User',
+              //     contact: customer?.phoneNumber || '',
+              //     email: customer?.email || '',
+              //   },
+              // });
+
+              // Simulate payment success
+              await axios.post(`${api}/puja/book_puja`, {
+                customerId: customer._id,
+                cartId: cartData.cartId,
+                razorpayOrderId: orderRes.data.data.id,
+                razorpayPaymentId: 'simulated_payment_id_' + Date.now(),
+              });
+
+              Toast.show({
+                type: 'success',
+                text1: 'Payment Successful',
+                text2: 'Pooja booked successfully',
+              });
+
+              // Clear cart and navigate
+              setCartData(null);
+              // navigation.navigate('BookedPooja');
+            } catch (error) {
+              console.error('Payment error:', error);
+              Toast.show({
+                type: 'error',
+                text1: 'Payment Failed',
+                text2: error.response?.data?.message || 'Payment failed',
+              });
+            } finally {
+              setPaymentLoading(false);
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
   };
 
   if (loading) {
@@ -87,6 +172,7 @@ export default function CartScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      <LoadingSpinner visible={paymentLoading} />
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#db9a4a']} />
@@ -131,9 +217,14 @@ export default function CartScreen() {
           <Text style={styles.total}>Total: ₹ {cartData.totalCartPrice}</Text>
           <TouchableOpacity
             style={styles.payBtn}
-            onPress={() => Alert.alert('Payment', 'Payment integration coming soon. For now, use the original app for payments.')}
+            onPress={handlePayment}
+            disabled={paymentLoading}
           >
-            <Text style={styles.payText}>Proceed to Pay</Text>
+            {paymentLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.payText}>Proceed to Pay</Text>
+            )}
           </TouchableOpacity>
         </View>
       )}

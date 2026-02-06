@@ -2,6 +2,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import SplashScreen from '../screens/SplashScreen';
+import LoginScreen from '../screens/LoginScreen';
+import OtpScreen from '../screens/OtpScreen';
+import SignUpLoginScreen from '../screens/SignUpLoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import MyConsultationsScreen from '../screens/MyConsultationsScreen';
@@ -31,6 +34,21 @@ export default function AppNavigator() {
           name="Splash"
           component={SplashScreen}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Otp"
+          component={OtpScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SignUpLogin"
+          component={SignUpLoginScreen}
+          options={{ title: 'Complete Profile' }}
         />
         <Stack.Screen
           name="Home"
